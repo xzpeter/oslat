@@ -1,4 +1,4 @@
-oslat - A OS Latency Detector
+oslat - OS Latency Detector
 ==========
 
 Introduction
@@ -13,8 +13,9 @@ privileges for e.g. setting schedule priorities or doing memory locks.
 Major features:
 
   - Poll-based busy loop, doing RDTSC on specified cores.  By default, it'll
-    launch a test thread on all cores
-  - Collect interruptions (in microseconds) and put into per-us baskets
+    launch one test thread on each of the core.
+  - Collect interruptions of rdtsc sequence (in microseconds) and put into
+    per-us baskets (1us, 2us, 3us, ..., Nus, N configurable).
   - Supports CPU-list (libnuma), FIFO priority, and multi-threading
   - Little memory footprint
   - Supports ftrace
@@ -29,7 +30,7 @@ Sample output
 This is a sample output of running oslat on a real-time virtual machine (core
 2-9 isolated) for 1 hour:
 
-    [root@localhost ~]# ./oslat --cpu-list 2,3,4,5,6,7,8,9 --rtprio 1 --runtime 3600
+    [root@localhost ~]# ./oslat --cpu-list 2-9 --rtprio 1 --runtime 3600
 
         Version: v0.1.0
 
