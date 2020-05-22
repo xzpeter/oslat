@@ -20,10 +20,6 @@ Major features:
   - Little memory footprint
   - Supports ftrace
 
-TODO:
-
-  - Calculate these factors (per-core): mean, variance
-
 Sample output
 -------------
 
