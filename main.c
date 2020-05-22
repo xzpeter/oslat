@@ -59,7 +59,6 @@ static inline void frc(uint64_t* pval)
 
 typedef uint64_t stamp_t;   /* timestamp */
 typedef uint64_t cycles_t;  /* number of cycles */
-static const char* app;
 static const char* version = "v0.1.1";
 
 enum command {
@@ -96,6 +95,9 @@ struct global {
     int                   rtprio;
     int                   bucket_size;
     int                   trace_threshold;
+    int                   runtime;
+    char *                cpu_list;
+    char *                app_name;
 
     /* Mutable state. */
     volatile enum command cmd;
@@ -188,8 +190,8 @@ static void insert_bucket(struct thread *t, stamp_t value)
     if (g.trace_threshold && us >= g.trace_threshold) {
         char *line = "%s: Trace threshold (%d us) triggered with %u us!  "
             "Stopping the test.\n";
-        tracemark(line, app, g.trace_threshold, us);
-        err_quit(line, app, g.trace_threshold, us);
+        tracemark(line, g.app_name, g.trace_threshold, us);
+        err_quit(line, g.app_name, g.trace_threshold, us);
     }
 
     /* Update max latency */
@@ -352,17 +354,25 @@ static void handle_alarm(int code)
     g.cmd = STOP;
 }
 
-static void usage(const char* prog)
+const char *helpmsg =
+    "Usage: %s [options]\n"
+    "\n"
+    "This is an OS latency detector by running busy loops on specified cores.\n"
+    "Please run this tool using root.\n"
+    "\n"
+    "Available options:\n"
+    "\n"
+    "  -b, --bucket-size      Specify the number of the buckets (4-1024)\n"
+    "  -t, --runtime          Specify test duration (in seconds, e.g., 60)\n"
+    "  -c, --cpu-list         Specify CPUs to run on (e.g. '1,3,5,7-15')\n"
+    "  -r, --rtprio           Using SCHED_FIFO priority (1-99)\n"
+    "  -T, --trace-threshold  Stop the test when threshold triggered (in us),\n"
+    "                         print a marker in ftrace and stop ftrace too.\n"
+    ;
+
+static void usage(void)
 {
-    fprintf(stderr, "usage:\n");
-    fprintf(stderr, "  %s [options]\n", prog);
-    fprintf(stderr, "\n");
-    fprintf(stderr, "options:\n");
-    fprintf(stderr, "  --runtime <seconds>\n");
-    fprintf(stderr, "  --cpu-list <CPU-list>  (e.g. '1,3,5,7-15')\n");
-    fprintf(stderr, "  --rtprio <RT-prio>\n");
-    fprintf(stderr, "  --trace-threshold <us>\n");
-    fprintf(stderr, "  --bucket-size <value> (4-1024)\n");
+    printf(helpmsg, g.app_name);
     exit(1);
 }
 
@@ -397,62 +407,89 @@ static int parse_cpu_list(char *cpu_list, cpu_set_t *cpu_set)
     return n_cores;
 }
 
+/* Process commandline options */
+static void parse_options(int argc, char *argv[])
+{
+    while (1) {
+		static struct option options[] = {
+			{ "bucket-size", required_argument, NULL, 'b' },
+			{ "cpu-list", required_argument, NULL, 'c' },
+			{ "runtime", required_argument, NULL, 't' },
+			{ "rtprio", required_argument, NULL, 'f' },
+			{ "help", no_argument, NULL, 'h' },
+			{ "trace-threshold", required_argument, NULL, 'T' },
+			{ NULL, 0, NULL, 0 },
+		};
+		int c = getopt_long(argc, argv, "b:c:f:ht:T:", options, NULL);
+
+		if (c == -1)
+			break;
+
+		switch (c) {
+        case 'b':
+            g.bucket_size = strtol(optarg, NULL, 10);
+            break;
+        case 'c':
+            g.cpu_list = strdup(optarg);
+            break;
+        case 't':
+            g.runtime = strtol(optarg, NULL, 10);
+            break;
+        case 'f':
+            g.rtprio = strtol(optarg, NULL, 10);
+            if (g.rtprio < 1 || g.rtprio > 99) {
+                printf("Illegal RT priority: %s (should be: 1-99)\n", optarg);
+                exit(1);
+            }
+            break;
+        case 'T':
+            g.trace_threshold = strtol(optarg, NULL, 10);
+            if (g.trace_threshold <= 0) {
+                printf("Parameter --trace-threshold needs to be positive\n");
+                exit(1);
+            }
+            enable_trace_mark();
+            break;
+        default:
+            usage();
+            break;
+		}
+	}
+}
+
+void dump_globals(void)
+{
+    printf("Total runtime: \t\t%d seconds\n", g.runtime);
+    printf("Thread priority: \t");
+    if (g.rtprio != -1) {
+        printf("SCHED_FIFO:%d\n", g.rtprio);
+    } else {
+        printf("default\n");
+    }
+    printf("CPU list: \t\t%s\n", g.cpu_list ?: "(all cores)");
+    printf("\n");
+}
+
 int main(int argc, char* argv[])
 {
     struct thread* threads;
-    char* cpu_list = NULL;
-    char dummy;
-    int i, n_cores, runtime = 70;
+    int i, n_cores;
     cpu_set_t cpu_set;
 
-    app = argv[0];
+    g.app_name = argv[0];
 
     CPU_ZERO(&cpu_set);
     g.rtprio = -1;
     g.bucket_size = BUCKET_SIZE;
+    g.runtime = 1;
 
     printf("Version: %s\n\n", version);
 
-    --argc; ++argv;
-    for( ; argc; --argc, ++argv ) {
-        if( argv[0][0] != '-' ) {
-            break;
-        }
-        else if( strcmp(argv[0], "--runtime") == 0 && argc > 1 &&
-                sscanf(argv[1], "%u%c", &runtime, &dummy) == 1 ) {
-            --argc, ++argv;
-        }
-        else if( strcmp(argv[0], "--cpu-list") == 0 ) {
-            cpu_list = argv[1];
-            --argc, ++argv;
-        }
-        else if( strcmp(argv[0], "--bucket-size") == 0 ) {
-            sscanf(argv[1], "%i%c", &g.bucket_size, &dummy);
-            if (g.bucket_size <= 4 || g.bucket_size > 1024) {
-                err_quit("Incorrect --bucket-size %d (requires 4<size<=1024)\n",
-                         g.bucket_size);
-            }
-            --argc, ++argv;
-        }
-        else if( strcmp(argv[0], "--trace-threshold") == 0 ) {
-            sscanf(argv[1], "%i%c", &g.trace_threshold, &dummy);
-            if (g.trace_threshold <= 0) {
-                err_quit("Parameter --trace-threshold needs to be positive\n");
-            }
-            enable_trace_mark();
-            --argc, ++argv;
-        }
-        else if( strcmp(argv[0], "--rtprio") == 0 ) {
-            g.rtprio = atoi(argv[1]);
-            --argc, ++argv;
-        } else {
-            usage(app);
-        }
-    }
+    parse_options(argc, argv);
 
     TEST(mlockall(MCL_CURRENT | MCL_FUTURE) == 0);
 
-    n_cores = parse_cpu_list(cpu_list, &cpu_set);
+    n_cores = parse_cpu_list(g.cpu_list, &cpu_set);
 
     TEST( threads = calloc(1, CPU_COUNT(&cpu_set) * sizeof(threads[0])) );
     for( i = 0; i < n_cores; ++i )
@@ -470,10 +507,21 @@ int main(int argc, char* argv[])
     signal(SIGINT, handle_alarm);
     signal(SIGTERM, handle_alarm);
 
+    dump_globals();
+
+    printf("Pre-heat for 1 seconds...\n");
     run_expt(threads, 1);
     cleanup_expt(threads);
-    run_expt(threads, runtime);
+    printf("Test starts...\n");
+    run_expt(threads, g.runtime);
+    printf("Test completed.\n\n");
+
     write_summary(threads);
+
+    if (g.cpu_list) {
+        free(g.cpu_list);
+        g.cpu_list = NULL;
+    }
 
     return 0;
 }
