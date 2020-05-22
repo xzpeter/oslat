@@ -25,6 +25,9 @@
 
 #include "rt-utils.h"
 
+static const char* version = "v0.1.1";
+
+
 #ifdef __GNUC__
 # define atomic_inc(ptr)   __sync_add_and_fetch((ptr), 1)
 # if defined(__x86_64__)
@@ -56,10 +59,8 @@ static inline void frc(uint64_t* pval)
 # error Need to add support for this compiler.
 #endif
 
-
 typedef uint64_t stamp_t;   /* timestamp */
 typedef uint64_t cycles_t;  /* number of cycles */
-static const char* version = "v0.1.1";
 
 enum command {
     WAIT,
@@ -256,9 +257,6 @@ static void* thread_main(void* arg)
 
     thread_init(t);
 
-    /* Last thread to get here starts the timer. */
-    // if( atomic_inc(&g.n_threads_ready) == g.n_threads )
-    //   alarm(g.runtime_secs);
     /* Ensure we all start at the same time. */
     atomic_inc(&g.n_threads_running);
     while( g.n_threads_running != g.n_threads )
@@ -280,38 +278,30 @@ static void* thread_main(void* arg)
     return NULL;
 }
 
-#define _putfield(label, val, fmt, end) do {    \
+#define putfield(label, val, fmt, end) do {     \
         printf("%12s:\t", label);               \
-        for( i = 0; i < g.n_threads; ++i )      \
+        for (i = 0; i < g.n_threads; ++i)       \
             printf(" %"fmt, val);               \
         printf("%s\n", end);                    \
-    } while( 0 )
-
-#define putfield(fn, fmt)  _putfield(#fn, t[i].fn, fmt, "")
-
-#define putu(fn)  putfield(fn, "u")
-#define putul(fn)  putfield(fn, "lu")
-#define put_frc(fn)  putfield(fn, PRIx64)
-#define put_cycles_s(fn)                                                \
-    _putfield(#fn, cycles_to_sec(&(t[i]), t[i].fn), ".3f", " (sec)")
+    } while (0)
 
 static void write_summary(struct thread* t)
 {
     int i, j;
+    char bucket_name[64];
 
-    putu(core_i);
-    putu(cpu_mhz);
+    putfield("Core", t[i].core_i, "d", "");
+    putfield("CPU Freq", t[i].cpu_mhz, "u", " (Mhz)");
 
-    for (i = 0; i < g.bucket_size; i++) {
-        printf("    %03d (us):\t", i+1);
-        for (j = 0; j < g.n_threads; j++) {
-            printf(" %"PRIu64, t[j].buckets[i]);
-        }
-        printf("\n");
+    for (j = 0; j < g.bucket_size; j++) {
+        snprintf(bucket_name, sizeof(bucket_name), "%03d (us)", j+1);
+        putfield(bucket_name, t[i].buckets[j], PRIu64, "");
     }
 
-    _putfield("maxlat", t[i].maxlat, PRIu64, " (us)");
-    put_cycles_s(runtime);
+    putfield("Max Latency", t[i].maxlat, PRIu64, " (us)");
+    putfield("Duration", cycles_to_sec(&(t[i]), t[i].runtime),
+              ".3f", " (sec)");
+    printf("\n");
 }
 
 static void run_expt(struct thread* threads, int runtime_secs)
@@ -343,6 +333,7 @@ static void run_expt(struct thread* threads, int runtime_secs)
 static void cleanup_expt(struct thread* threads)
 {
     int i;
+
     for( i = 0; i < g.n_threads; ++i ) {
         free(threads[i].buckets);
         threads[i].buckets = NULL;
@@ -476,14 +467,14 @@ int main(int argc, char* argv[])
     int i, n_cores;
     cpu_set_t cpu_set;
 
-    g.app_name = argv[0];
-
     CPU_ZERO(&cpu_set);
+
+    g.app_name = argv[0];
     g.rtprio = 0;
     g.bucket_size = BUCKET_SIZE;
     g.runtime = 1;
 
-    printf("Version: %s\n\n", version);
+    printf("\nVersion: %s\n\n", version);
 
     parse_options(argc, argv);
 
