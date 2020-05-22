@@ -246,7 +246,7 @@ static void* thread_main(void* arg)
      * the "struct thread" since we expect that to stay cache resident.
      */
     TEST(move_to_core(t->core_i) == 0);
-    if (g.rtprio != -1)
+    if (g.rtprio)
         TEST(set_fifo_prio(g.rtprio) == 0);
 
     /* Don't bash the cpu until all threads have got going. */
@@ -461,7 +461,7 @@ void dump_globals(void)
 {
     printf("Total runtime: \t\t%d seconds\n", g.runtime);
     printf("Thread priority: \t");
-    if (g.rtprio != -1) {
+    if (g.rtprio) {
         printf("SCHED_FIFO:%d\n", g.rtprio);
     } else {
         printf("default\n");
@@ -479,7 +479,7 @@ int main(int argc, char* argv[])
     g.app_name = argv[0];
 
     CPU_ZERO(&cpu_set);
-    g.rtprio = -1;
+    g.rtprio = 0;
     g.bucket_size = BUCKET_SIZE;
     g.runtime = 1;
 
@@ -496,7 +496,7 @@ int main(int argc, char* argv[])
         if (CPU_ISSET(i, &cpu_set) && move_to_core(i) == 0)
             threads[g.n_threads++].core_i = i;
 
-    if (CPU_ISSET(0, &cpu_set) && g.rtprio != -1) {
+    if (CPU_ISSET(0, &cpu_set) && g.rtprio) {
         printf("WARNING: Running SCHED_FIFO workload on CPU 0 "
                "may hang the main thread\n");
     }
