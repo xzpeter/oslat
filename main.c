@@ -60,7 +60,7 @@ static inline void frc(uint64_t* pval)
 typedef uint64_t stamp_t;   /* timestamp */
 typedef uint64_t cycles_t;  /* number of cycles */
 static const char* app;
-static const char* version = "v0.1.0";
+static const char* version = "v0.1.1";
 
 enum command {
     WAIT,
@@ -458,6 +458,12 @@ int main(int argc, char* argv[])
     for( i = 0; i < n_cores; ++i )
         if (CPU_ISSET(i, &cpu_set) && move_to_core(i) == 0)
             threads[g.n_threads++].core_i = i;
+
+    if (CPU_ISSET(0, &cpu_set) && g.rtprio != -1) {
+        printf("WARNING: Running SCHED_FIFO workload on CPU 0 "
+               "may hang the main thread\n");
+    }
+
     TEST(move_to_core(0) == 0);
 
     signal(SIGALRM, handle_alarm);
