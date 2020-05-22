@@ -1,0 +1,8 @@
+v0.1.2:
+- rewrite the option parsing, allow short options, prettier output here and there
+
+v0.1.1:
+- print a warning when --rtprio is used with a --cpu-list containing cpu0
+
+v0.1.0:
+- the initial version
