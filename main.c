@@ -388,8 +388,8 @@ const char *helpmsg =
     "  -b, --bucket-size      Specify the number of the buckets (4-1024)\n"
     "  -t, --runtime          Specify test duration, e.g., 60, 20m, 2H\n"
     "                         (m/M: minutes, h/H: hours, d/D: days)\n"
-    "  -c, --cpu-list         Specify CPUs to run on (e.g. '1,3,5,7-15')\n"
-    "  -r, --rtprio           Using SCHED_FIFO priority (1-99)\n"
+    "  -c, --cpu-list         Specify CPUs to run on, e.g. '1,3,5,7-15'\n"
+    "  -f, --rtprio           Using SCHED_FIFO priority (1-99)\n"
     "  -T, --trace-threshold  Stop the test when threshold triggered (in us),\n"
     "                         print a marker in ftrace and stop ftrace too.\n"
     ;
