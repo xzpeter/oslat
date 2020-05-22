@@ -354,7 +354,8 @@ const char *helpmsg =
     "Available options:\n"
     "\n"
     "  -b, --bucket-size      Specify the number of the buckets (4-1024)\n"
-    "  -t, --runtime          Specify test duration (in seconds, e.g., 60)\n"
+    "  -t, --runtime          Specify test duration, e.g., 60, 20m, 2H\n"
+    "                         (m/M: minutes, h/H: hours, d/D: days)\n"
     "  -c, --cpu-list         Specify CPUs to run on (e.g. '1,3,5,7-15')\n"
     "  -r, --rtprio           Using SCHED_FIFO priority (1-99)\n"
     "  -T, --trace-threshold  Stop the test when threshold triggered (in us),\n"
@@ -398,6 +399,43 @@ static int parse_cpu_list(char *cpu_list, cpu_set_t *cpu_set)
     return n_cores;
 }
 
+static int parse_runtime(const char *str)
+{
+    char *endptr;
+    int v = strtol(str, &endptr, 10);
+
+    printf("SCANNED: %d, ENDPTR: %d\n", v, *endptr);
+
+    if (!*endptr) {
+        return v;
+    }
+
+    switch (*endptr) {
+    case 'd':
+    case 'D':
+        /* Days */
+        v *= 24;
+    case 'h':
+    case 'H':
+        /* Hours */
+        v *= 60;
+    case 'm':
+    case 'M':
+        /* Minutes */
+        v *= 60;
+    case 's':
+    case 'S':
+        /* Seconds */
+        break;
+    default:
+        printf("Unknown runtime suffix: %s\n", endptr);
+        v = 0;
+        break;
+    }
+
+    return v;
+}
+
 /* Process commandline options */
 static void parse_options(int argc, char *argv[])
 {
@@ -429,7 +467,11 @@ static void parse_options(int argc, char *argv[])
             g.cpu_list = strdup(optarg);
             break;
         case 't':
-            g.runtime = strtol(optarg, NULL, 10);
+            g.runtime = parse_runtime(optarg);
+            if (!g.runtime) {
+                printf("Illegal runtime: %s\n", optarg);
+                exit(1);
+            }
             break;
         case 'f':
             g.rtprio = strtol(optarg, NULL, 10);
