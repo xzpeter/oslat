@@ -25,7 +25,7 @@
 
 #include "rt-utils.h"
 
-static const char* version = "v0.1.1";
+static const char* version = "v0.1.2";
 
 
 #ifdef __GNUC__
