@@ -419,6 +419,11 @@ static void parse_options(int argc, char *argv[])
 		switch (c) {
         case 'b':
             g.bucket_size = strtol(optarg, NULL, 10);
+            if (g.bucket_size > 1024 || g.bucket_size <= 4) {
+                printf("Illegal bucket size: %s (should be: 4-1024)\n",
+                       optarg);
+                exit(1);
+            }
             break;
         case 'c':
             g.cpu_list = strdup(optarg);
