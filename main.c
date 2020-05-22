@@ -86,6 +86,8 @@ struct thread {
     stamp_t             *buckets;
     /* Maximum latency detected */
     stamp_t              maxlat;
+    double               average;
+    double               variance;
 };
 
 struct global {
@@ -285,10 +287,38 @@ static void* thread_main(void* arg)
         printf("%s\n", end);                    \
     } while (0)
 
+void calculate(struct thread *t)
+{
+    int i, j;
+    double sum, tmp;
+    uint64_t count;
+
+    for (i = 0; i < g.n_threads; ++i) {
+        /* Calculate average */
+        sum = count = 0;
+        for (j = 0; j < g.bucket_size; j++) {
+            sum += 1.0 * t[i].buckets[j] * (j+1);
+            count += t[i].buckets[j];
+        }
+        t[i].average = sum / count;
+
+        /* Calculate variance */
+        sum = 0;
+        for (j = 0; j < g.bucket_size; j++) {
+            tmp = (j+1 - t[i].average);
+            tmp *= tmp;
+            sum += tmp * t[i].buckets[j];
+        }
+        t[i].variance = sqrt(sum / count);
+    }
+}
+
 static void write_summary(struct thread* t)
 {
     int i, j;
     char bucket_name[64];
+
+    calculate(t);
 
     putfield("Core", t[i].core_i, "d", "");
     putfield("CPU Freq", t[i].cpu_mhz, "u", " (Mhz)");
@@ -299,8 +329,10 @@ static void write_summary(struct thread* t)
     }
 
     putfield("Max Latency", t[i].maxlat, PRIu64, " (us)");
+    putfield("Average", t[i].average, ".2lf", " (us)");
+    putfield("Variance", t[i].variance, ".2lf", " (us)");
     putfield("Duration", cycles_to_sec(&(t[i]), t[i].runtime),
-              ".3f", " (sec)");
+             ".3f", " (sec)");
     printf("\n");
 }
 

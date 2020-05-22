@@ -3,7 +3,7 @@ CFLAGS		= -O2 -Wall
 endif
 
 INCLUDE		+= -I.
-LDFLAGS         += -lpthread -lnuma
+LDFLAGS         += -lpthread -lnuma -lm
 
 is_ppc		:= $(shell (uname -m || uname -p) | grep ppc)
 is_x86		:= $(shell (uname -m || uname -p) | grep i.86)
