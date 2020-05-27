@@ -392,6 +392,7 @@ const char *helpmsg =
     "  -f, --rtprio           Using SCHED_FIFO priority (1-99)\n"
     "  -T, --trace-threshold  Stop the test when threshold triggered (in us),\n"
     "                         print a marker in ftrace and stop ftrace too.\n"
+    "\n"
     ;
 
 static void usage(void)
