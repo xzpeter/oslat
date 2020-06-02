@@ -134,6 +134,7 @@ struct global {
     char *                cpu_list;
     char *                app_name;
     struct workload *     workload;
+    uint64_t              workload_mem_size;
 
     /* Mutable state. */
     volatile enum command cmd;
@@ -225,11 +226,11 @@ static void thread_init(struct thread* t)
     TEST(t->buckets = calloc(1, sizeof(t->buckets[0]) * g.bucket_size));
     if (g.workload->w_flags & WORK_NEED_MEM) {
         TEST0(posix_memalign((void **)&t->src_buf, getpagesize(),
-                             WORKLOAD_MEM_SIZE));
-        memset(t->src_buf, 0, WORKLOAD_MEM_SIZE);
+                             g.workload_mem_size));
+        memset(t->src_buf, 0, g.workload_mem_size);
         TEST0(posix_memalign((void **)&t->dst_buf, getpagesize(),
-                             WORKLOAD_MEM_SIZE));
-        memset(t->dst_buf, 0, WORKLOAD_MEM_SIZE);
+                             g.workload_mem_size));
+        memset(t->dst_buf, 0, g.workload_mem_size);
     }
 }
 
@@ -297,7 +298,7 @@ static void doit(struct thread* t)
 
     frc(&ts2);
     do {
-        workload_fn(t->dst_buf, t->src_buf, WORKLOAD_MEM_SIZE);
+        workload_fn(t->dst_buf, t->src_buf, g.workload_mem_size);
         frc(&ts1);
         insert_bucket(t, ts1 - ts2);
         ts2 = ts1;
@@ -462,6 +463,9 @@ const char *helpmsg =
     "                         print a marker in ftrace and stop ftrace too.\n"
     "  -w, --workload         Specify a kind of workload, default is no workload\n"
     "                         (options: no, memmove)\n"
+    "  -m, --workload-mem     Size of the memory to use for the workload (e.g., 4K, 1M)\n"
+    "                         Total memory usage will be *2*N, because there will be\n"
+    "                         src/dst buffers, and N is the core count for testing.\n"
     "\n"
     ;
 
@@ -507,8 +511,6 @@ static int parse_runtime(const char *str)
     char *endptr;
     int v = strtol(str, &endptr, 10);
 
-    printf("SCANNED: %d, ENDPTR: %d\n", v, *endptr);
-
     if (!*endptr) {
         return v;
     }
@@ -539,6 +541,37 @@ static int parse_runtime(const char *str)
     return v;
 }
 
+static int parse_mem_size(char *str, uint64_t *val)
+{
+    char *endptr;
+    int v = strtol(str, &endptr, 10);
+
+    if (!*endptr) {
+        return v;
+    }
+
+    switch (*endptr) {
+    case 'g':
+    case 'G':
+        v *= 1024;
+    case 'm':
+    case 'M':
+        v *= 1024;
+    case 'k':
+    case 'K':
+        v *= 1024;
+    case 'b':
+    case 'B':
+        break;
+    default:
+        return -1;
+    }
+
+    *val = v;
+
+    return 0;
+}
+
 static int workload_select(char *name)
 {
     int i = 0;
@@ -565,9 +598,10 @@ static void parse_options(int argc, char *argv[])
 			{ "help", no_argument, NULL, 'h' },
 			{ "trace-threshold", required_argument, NULL, 'T' },
             { "workload", required_argument, NULL, 'w'},
+            { "workload-mem", required_argument, NULL, 'm'},
 			{ NULL, 0, NULL, 0 },
 		};
-		int i, c = getopt_long(argc, argv, "b:c:f:ht:w:T:", options, NULL);
+		int i, c = getopt_long(argc, argv, "b:c:f:hm:t:w:T:", options, NULL);
 
 		if (c == -1)
 			break;
@@ -619,6 +653,12 @@ static void parse_options(int argc, char *argv[])
                 exit(1);
             }
             break;
+        case 'm':
+            if (parse_mem_size(optarg, &g.workload_mem_size)) {
+                printf("Unknown workload memory size '%s'.\n\n", optarg);
+                exit(1);
+            }
+            break;
         default:
             usage();
             break;
@@ -637,6 +677,9 @@ void dump_globals(void)
     }
     printf("CPU list: \t\t%s\n", g.cpu_list ?: "(all cores)");
     printf("Workload: \t\t%s\n", g.workload->w_name);
+    printf("Workload mem: \t\t%"PRIu64" (KiB)\n",
+           (g.workload->w_flags & WORK_NEED_MEM) ?
+           (g.workload_mem_size / 1024) : 0);
     printf("\n");
 }
 
@@ -653,6 +696,7 @@ int main(int argc, char* argv[])
     g.bucket_size = BUCKET_SIZE;
     g.runtime = 1;
     g.workload = &workload_list[WORKLOAD_DEFUALT];
+    g.workload_mem_size = WORKLOAD_MEM_SIZE;
 
     printf("\nVersion: %s\n\n", version);
 
