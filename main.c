@@ -107,6 +107,12 @@ struct thread {
     stamp_t             *buckets;
     /* Maximum latency detected */
     stamp_t              maxlat;
+    /*
+     * The extra part of the interruptions that cannot be put into even the
+     * biggest bucket.  We'll use this to calculate a more accurate average at
+     * the end of the tests.
+     */
+    uint64_t             overflow_sum;
 
     /* Buffers used for the workloads */
     char *               src_buf;
@@ -114,7 +120,6 @@ struct thread {
 
     /* These variables are calculated after the test */
     double               average;
-    double               variance;
 };
 
 struct global {
@@ -216,6 +221,7 @@ static void thread_init(struct thread* t)
 {
     t->cpu_mhz = measure_cpu_mhz();
     t->maxlat = 0;
+    t->overflow_sum = 0;
     TEST(t->buckets = calloc(1, sizeof(t->buckets[0]) * g.bucket_size));
     if (g.workload->w_flags & WORK_NEED_MEM) {
         TEST0(posix_memalign((void **)&t->src_buf, getpagesize(),
@@ -245,6 +251,7 @@ static float cycles_to_sec(const struct thread* t, uint64_t cycles)
 static void insert_bucket(struct thread *t, stamp_t value)
 {
     int index, us;
+    uint64_t extra;
 
     index = value / t->cpu_mhz;
     assert(index >= 0);
@@ -265,6 +272,14 @@ static void insert_bucket(struct thread *t, stamp_t value)
 
     /* Too big the jitter; put into the last bucket */
     if (index >= g.bucket_size) {
+        /* Keep the extra bit (in us) */
+        extra = index - g.bucket_size;
+        if (t->overflow_sum + extra < t->overflow_sum) {
+            /* The uint64_t even overflowed itself; bail out */
+            printf("Accumulated overflow too much!\n");
+            exit(1);
+        }
+        t->overflow_sum += extra;
         index = g.bucket_size - 1;
     }
 
@@ -352,32 +367,19 @@ static void* thread_main(void* arg)
 void calculate(struct thread *t)
 {
     int i, j;
-    double sum, tmp;
+    double sum;
     uint64_t count;
 
     for (i = 0; i < g.n_threads; ++i) {
-        if (t[i].maxlat > g.bucket_size) {
-            /* It means it is meaningless to calculate these numbers.. */
-            t[i].average = t[i].variance = -1;
-            continue;
-        }
-
         /* Calculate average */
         sum = count = 0;
         for (j = 0; j < g.bucket_size; j++) {
             sum += 1.0 * t[i].buckets[j] * (j+1);
             count += t[i].buckets[j];
         }
+        /* Add the extra amount of huge spikes in */
+        sum += t->overflow_sum;
         t[i].average = sum / count;
-
-        /* Calculate variance */
-        sum = 0;
-        for (j = 0; j < g.bucket_size; j++) {
-            tmp = (j+1 - t[i].average);
-            tmp *= tmp;
-            sum += tmp * t[i].buckets[j];
-        }
-        t[i].variance = sqrt(sum / count);
     }
 }
 
@@ -396,9 +398,8 @@ static void write_summary(struct thread* t)
         putfield(bucket_name, t[i].buckets[j], PRIu64, "");
     }
 
-    putfield("Max Latency", t[i].maxlat, PRIu64, " (us)");
     putfield("Average", t[i].average, ".3lf", " (us)");
-    putfield("Variance", t[i].variance, ".3lf", " (us)");
+    putfield("Max Latency", t[i].maxlat, PRIu64, " (us)");
     putfield("Duration", cycles_to_sec(&(t[i]), t[i].runtime),
              ".3f", " (sec)");
     printf("\n");
