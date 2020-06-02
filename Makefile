@@ -22,5 +22,8 @@ oslat: main.o rt-utils.o error.o trace.o
 clean:
 	rm -f *.o oslat cscope.*
 
+install: oslat
+	sudo install oslat /usr/local/bin
+
 cscope:
 	cscope -bq *.c
