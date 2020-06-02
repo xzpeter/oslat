@@ -329,8 +329,8 @@ static void write_summary(struct thread* t)
     }
 
     putfield("Max Latency", t[i].maxlat, PRIu64, " (us)");
-    putfield("Average", t[i].average, ".2lf", " (us)");
-    putfield("Variance", t[i].variance, ".2lf", " (us)");
+    putfield("Average", t[i].average, ".3lf", " (us)");
+    putfield("Variance", t[i].variance, ".3lf", " (us)");
     putfield("Duration", cycles_to_sec(&(t[i]), t[i].runtime),
              ".3f", " (sec)");
     printf("\n");
