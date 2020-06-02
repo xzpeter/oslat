@@ -68,10 +68,31 @@ enum command {
     STOP
 };
 
-/*
- * We'll have buckets 1us, 2us, ..., (BUCKET_SIZE) us.
- */
+enum workload_type {
+    WORKLOAD_NONE = 0,
+    WORKLOAD_MEMMOVE,
+    WORKLOAD_NUM,
+};
+
+/* This workload needs pre-allocated memory */
+#define  WORK_NEED_MEM  (1UL << 0)
+
+typedef void (*workload_fn)(char *src, char *dst, size_t size);
+
+struct workload {
+    const char *w_name;
+    uint64_t w_flags;
+    workload_fn w_fn;
+};
+
+/* We'll have buckets 1us, 2us, ..., (BUCKET_SIZE) us. */
 #define  BUCKET_SIZE  (32)
+
+/* Default size of the workloads per thread (in bytes, which is 16KB) */
+#define  WORKLOAD_MEM_SIZE  (16UL << 10)
+
+/* By default, no workload */
+#define  WORKLOAD_DEFUALT  WORKLOAD_NONE
 
 struct thread {
     int                  core_i;
@@ -86,6 +107,12 @@ struct thread {
     stamp_t             *buckets;
     /* Maximum latency detected */
     stamp_t              maxlat;
+
+    /* Buffers used for the workloads */
+    char *               src_buf;
+    char *               dst_buf;
+
+    /* These variables are calculated after the test */
     double               average;
     double               variance;
 };
@@ -101,6 +128,7 @@ struct global {
     int                   runtime;
     char *                cpu_list;
     char *                app_name;
+    struct workload *     workload;
 
     /* Mutable state. */
     volatile enum command cmd;
@@ -111,6 +139,21 @@ struct global {
 };
 
 static struct global g;
+
+static void workload_nop(char *dst, char *src, size_t size)
+{
+    /* Nop */
+}
+
+static void workload_memmove(char *dst, char *src, size_t size)
+{
+    memmove(dst, src, size);
+}
+
+struct workload workload_list[WORKLOAD_NUM] = {
+    { "no", 0, workload_nop },
+    { "memmove", WORK_NEED_MEM, workload_memmove },
+};
 
 #define TEST(x)                                 \
     do {                                        \
@@ -174,6 +217,24 @@ static void thread_init(struct thread* t)
     t->cpu_mhz = measure_cpu_mhz();
     t->maxlat = 0;
     TEST(t->buckets = calloc(1, sizeof(t->buckets[0]) * g.bucket_size));
+    if (g.workload->w_flags & WORK_NEED_MEM) {
+        TEST0(posix_memalign((void **)&t->src_buf, getpagesize(),
+                             WORKLOAD_MEM_SIZE));
+        memset(t->src_buf, 0, WORKLOAD_MEM_SIZE);
+        TEST0(posix_memalign((void **)&t->dst_buf, getpagesize(),
+                             WORKLOAD_MEM_SIZE));
+        memset(t->dst_buf, 0, WORKLOAD_MEM_SIZE);
+    }
+}
+
+static void thread_cleanup(struct thread *t)
+{
+    free(t->buckets);
+    t->buckets = NULL;
+    free(t->src_buf);
+    t->src_buf = NULL;
+    free(t->dst_buf);
+    t->dst_buf = NULL;
 }
 
 static float cycles_to_sec(const struct thread* t, uint64_t cycles)
@@ -217,13 +278,14 @@ static void insert_bucket(struct thread *t, stamp_t value)
 static void doit(struct thread* t)
 {
     stamp_t ts1, ts2;
+    workload_fn workload_fn = g.workload->w_fn;
 
     frc(&ts2);
     do {
+        workload_fn(t->dst_buf, t->src_buf, WORKLOAD_MEM_SIZE);
         frc(&ts1);
         insert_bucket(t, ts1 - ts2);
-        frc(&ts2);
-        insert_bucket(t, ts2 - ts1);
+        ts2 = ts1;
     } while (g.cmd == GO);
 }
 
@@ -294,6 +356,12 @@ void calculate(struct thread *t)
     uint64_t count;
 
     for (i = 0; i < g.n_threads; ++i) {
+        if (t[i].maxlat > g.bucket_size) {
+            /* It means it is meaningless to calculate these numbers.. */
+            t[i].average = t[i].variance = -1;
+            continue;
+        }
+
         /* Calculate average */
         sum = count = 0;
         for (j = 0; j < g.bucket_size; j++) {
@@ -367,8 +435,7 @@ static void cleanup_expt(struct thread* threads)
     int i;
 
     for( i = 0; i < g.n_threads; ++i ) {
-        free(threads[i].buckets);
-        threads[i].buckets = NULL;
+        thread_cleanup(&threads[i]);
     }
 }
 
@@ -392,6 +459,8 @@ const char *helpmsg =
     "  -f, --rtprio           Using SCHED_FIFO priority (1-99)\n"
     "  -T, --trace-threshold  Stop the test when threshold triggered (in us),\n"
     "                         print a marker in ftrace and stop ftrace too.\n"
+    "  -w, --workload         Specify a kind of workload, default is no workload\n"
+    "                         (options: no, memmove)\n"
     "\n"
     ;
 
@@ -469,6 +538,20 @@ static int parse_runtime(const char *str)
     return v;
 }
 
+static int workload_select(char *name)
+{
+    int i = 0;
+
+    for (i = 0; i < WORKLOAD_NUM; i++) {
+        if (!strcmp(name, workload_list[i].w_name)) {
+            g.workload = &workload_list[i];
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
 /* Process commandline options */
 static void parse_options(int argc, char *argv[])
 {
@@ -480,9 +563,10 @@ static void parse_options(int argc, char *argv[])
 			{ "rtprio", required_argument, NULL, 'f' },
 			{ "help", no_argument, NULL, 'h' },
 			{ "trace-threshold", required_argument, NULL, 'T' },
+            { "workload", required_argument, NULL, 'w'},
 			{ NULL, 0, NULL, 0 },
 		};
-		int c = getopt_long(argc, argv, "b:c:f:ht:T:", options, NULL);
+		int i, c = getopt_long(argc, argv, "b:c:f:ht:w:T:", options, NULL);
 
 		if (c == -1)
 			break;
@@ -521,6 +605,19 @@ static void parse_options(int argc, char *argv[])
             }
             enable_trace_mark();
             break;
+        case 'w':
+            if (workload_select(optarg)) {
+                printf("Unknown workload '%s'.  Please choose from: ", optarg);
+                for (i = 0; i < WORKLOAD_NUM; i++) {
+                    printf("'%s'", workload_list[i].w_name);
+                    if (i != WORKLOAD_NUM - 1) {
+                        printf(", ");
+                    }
+                }
+                printf("\n\n");
+                exit(1);
+            }
+            break;
         default:
             usage();
             break;
@@ -538,6 +635,7 @@ void dump_globals(void)
         printf("default\n");
     }
     printf("CPU list: \t\t%s\n", g.cpu_list ?: "(all cores)");
+    printf("Workload: \t\t%s\n", g.workload->w_name);
     printf("\n");
 }
 
@@ -553,6 +651,7 @@ int main(int argc, char* argv[])
     g.rtprio = 0;
     g.bucket_size = BUCKET_SIZE;
     g.runtime = 1;
+    g.workload = &workload_list[WORKLOAD_DEFUALT];
 
     printf("\nVersion: %s\n\n", version);
 
