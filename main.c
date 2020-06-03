@@ -105,8 +105,9 @@ struct thread {
     stamp_t              frc_stop;
     cycles_t             runtime;
     stamp_t             *buckets;
+    uint64_t             minlat;
     /* Maximum latency detected */
-    stamp_t              maxlat;
+    uint64_t             maxlat;
     /*
      * The extra part of the interruptions that cannot be put into even the
      * biggest bucket.  We'll use this to calculate a more accurate average at
@@ -224,6 +225,7 @@ static void thread_init(struct thread* t)
     t->cpu_mhz = measure_cpu_mhz();
     t->maxlat = 0;
     t->overflow_sum = 0;
+    t->minlat = (uint64_t)-1;
 
     /* NOTE: all the buffers are not freed until the process quits. */
     if (!t->memory_allocated) {
@@ -265,6 +267,10 @@ static void insert_bucket(struct thread *t, stamp_t value)
     /* Update max latency */
     if (us > t->maxlat) {
         t->maxlat = us;
+    }
+
+    if (us < t->minlat) {
+        t->minlat = us;
     }
 
     /* Too big the jitter; put into the last bucket */
@@ -396,6 +402,7 @@ static void write_summary(struct thread* t)
                  (j==g.bucket_size-1) ? " (including overflows)" : "");
     }
 
+    putfield("Min Latency", t[i].minlat, PRIu64, " (us)");
     putfield("Average", t[i].average, ".3lf", " (us)");
     putfield("Max Latency", t[i].maxlat, PRIu64, " (us)");
     putfield("Duration", cycles_to_sec(&(t[i]), t[i].runtime),
