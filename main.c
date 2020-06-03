@@ -392,7 +392,8 @@ static void write_summary(struct thread* t)
 
     for (j = 0; j < g.bucket_size; j++) {
         snprintf(bucket_name, sizeof(bucket_name), "%03d (us)", j+1);
-        putfield(bucket_name, t[i].buckets[j], PRIu64, "");
+        putfield(bucket_name, t[i].buckets[j], PRIu64,
+                 (j==g.bucket_size-1) ? " (including overflows)" : "");
     }
 
     putfield("Average", t[i].average, ".3lf", " (us)");
