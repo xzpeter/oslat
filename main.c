@@ -137,6 +137,8 @@ struct global {
     char *                app_name;
     struct workload *     workload;
     uint64_t              workload_mem_size;
+    int                   enable_bias;
+    uint64_t              bias;
 
     /* Mutable state. */
     volatile enum command cmd;
@@ -273,6 +275,22 @@ static void insert_bucket(struct thread *t, stamp_t value)
         t->minlat = us;
     }
 
+    if (g.bias) {
+        /* t->bias will be set after pre-heat if user enabled it */
+        us -= g.bias;
+        /*
+         * Negative should hardly happen, but if it happens, we assume we're in
+         * the smallest bucket, which is 1us.  Same to index.
+         */
+        if (us <= 0) {
+            us = 1;
+        }
+        index -= g.bias;
+        if (index < 0) {
+            index = 0;
+        }
+    }
+
     /* Too big the jitter; put into the last bucket */
     if (index >= g.bucket_size) {
         /* Keep the extra bit (in us) */
@@ -377,7 +395,7 @@ void calculate(struct thread *t)
         /* Calculate average */
         sum = count = 0;
         for (j = 0; j < g.bucket_size; j++) {
-            sum += 1.0 * t[i].buckets[j] * (j+1);
+            sum += 1.0 * t[i].buckets[j] * (g.bias+j+1);
             count += t[i].buckets[j];
         }
         /* Add the extra amount of huge spikes in */
@@ -397,7 +415,8 @@ static void write_summary(struct thread* t)
     putfield("CPU Freq", t[i].cpu_mhz, "u", " (Mhz)");
 
     for (j = 0; j < g.bucket_size; j++) {
-        snprintf(bucket_name, sizeof(bucket_name), "%03d (us)", j+1);
+        snprintf(bucket_name, sizeof(bucket_name), "%03"PRIu64
+                 " (us)", g.bias+j+1);
         putfield(bucket_name, t[i].buckets[j], PRIu64,
                  (j==g.bucket_size-1) ? " (including overflows)" : "");
     }
@@ -461,6 +480,7 @@ const char *helpmsg =
     "  -m, --workload-mem     Size of the memory to use for the workload (e.g., 4K, 1M)\n"
     "                         Total memory usage will be *2*N, because there will be\n"
     "                         src/dst buffers, and N is the core count for testing.\n"
+    "  -B, --bias             Add a bias to all the buckets using the estimated mininum\n"
     "\n"
     ;
 
@@ -594,9 +614,10 @@ static void parse_options(int argc, char *argv[])
 			{ "trace-threshold", required_argument, NULL, 'T' },
             { "workload", required_argument, NULL, 'w'},
             { "workload-mem", required_argument, NULL, 'm'},
+            { "bias", no_argument, NULL, 'B'},
 			{ NULL, 0, NULL, 0 },
 		};
-		int i, c = getopt_long(argc, argv, "b:c:f:hm:t:w:T:", options, NULL);
+		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:t:w:T:", options, NULL);
 
 		if (c == -1)
 			break;
@@ -609,6 +630,9 @@ static void parse_options(int argc, char *argv[])
                        optarg);
                 exit(1);
             }
+            break;
+        case 'B':
+            g.enable_bias = 1;
             break;
         case 'c':
             g.cpu_list = strdup(optarg);
@@ -678,6 +702,24 @@ void dump_globals(void)
     printf("\n");
 }
 
+static void record_bias(struct thread *t)
+{
+    int i;
+    uint64_t bias = (uint64_t)-1;
+
+    if (!g.enable_bias) {
+        return;
+    }
+
+    /* Record the min value of minlat on all the threads */
+    for( i = 0; i < g.n_threads; ++i ) {
+        if (t[i].minlat < bias) {
+            bias = t[i].minlat;
+        }
+    }
+    g.bias = bias;
+}
+
 int main(int argc, char* argv[])
 {
     struct thread* threads;
@@ -721,6 +763,7 @@ int main(int argc, char* argv[])
 
     printf("Pre-heat for 1 seconds...\n");
     run_expt(threads, 1);
+    record_bias(threads);
     printf("Test starts...\n");
     run_expt(threads, g.runtime);
     printf("Test completed.\n\n");
