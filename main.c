@@ -113,6 +113,7 @@ struct thread {
      * the end of the tests.
      */
     uint64_t             overflow_sum;
+    int                  memory_allocated;
 
     /* Buffers used for the workloads */
     char *               src_buf;
@@ -223,25 +224,20 @@ static void thread_init(struct thread* t)
     t->cpu_mhz = measure_cpu_mhz();
     t->maxlat = 0;
     t->overflow_sum = 0;
-    TEST(t->buckets = calloc(1, sizeof(t->buckets[0]) * g.bucket_size));
-    if (g.workload->w_flags & WORK_NEED_MEM) {
-        TEST0(posix_memalign((void **)&t->src_buf, getpagesize(),
-                             g.workload_mem_size));
-        memset(t->src_buf, 0, g.workload_mem_size);
-        TEST0(posix_memalign((void **)&t->dst_buf, getpagesize(),
-                             g.workload_mem_size));
-        memset(t->dst_buf, 0, g.workload_mem_size);
-    }
-}
 
-static void thread_cleanup(struct thread *t)
-{
-    free(t->buckets);
-    t->buckets = NULL;
-    free(t->src_buf);
-    t->src_buf = NULL;
-    free(t->dst_buf);
-    t->dst_buf = NULL;
+    /* NOTE: all the buffers are not freed until the process quits. */
+    if (!t->memory_allocated) {
+        TEST(t->buckets = calloc(1, sizeof(t->buckets[0]) * g.bucket_size));
+        if (g.workload->w_flags & WORK_NEED_MEM) {
+            TEST0(posix_memalign((void **)&t->src_buf, getpagesize(),
+                                 g.workload_mem_size));
+            memset(t->src_buf, 0, g.workload_mem_size);
+            TEST0(posix_memalign((void **)&t->dst_buf, getpagesize(),
+                                 g.workload_mem_size));
+            memset(t->dst_buf, 0, g.workload_mem_size);
+        }
+        t->memory_allocated = 1;
+    }
 }
 
 static float cycles_to_sec(const struct thread* t, uint64_t cycles)
@@ -430,15 +426,6 @@ static void run_expt(struct thread* threads, int runtime_secs)
     /* Go to sleep until the threads have done their stuff. */
     for( i = 0; i < g.n_threads; ++i )
         pthread_join(threads[i].thread_id, NULL);
-}
-
-static void cleanup_expt(struct thread* threads)
-{
-    int i;
-
-    for( i = 0; i < g.n_threads; ++i ) {
-        thread_cleanup(&threads[i]);
-    }
 }
 
 static void handle_alarm(int code)
@@ -726,7 +713,6 @@ int main(int argc, char* argv[])
 
     printf("Pre-heat for 1 seconds...\n");
     run_expt(threads, 1);
-    cleanup_expt(threads);
     printf("Test starts...\n");
     run_expt(threads, g.runtime);
     printf("Test completed.\n\n");
