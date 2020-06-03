@@ -241,6 +241,9 @@ static void thread_init(struct thread* t)
             memset(t->dst_buf, 0, g.workload_mem_size);
         }
         t->memory_allocated = 1;
+    } else {
+        /* Clear the buckets */
+        memset(t->buckets, 0, sizeof(t->buckets[0]) * g.bucket_size);
     }
 }
 
