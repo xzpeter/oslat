@@ -424,9 +424,9 @@ static void write_summary(struct thread* t)
                  (j==g.bucket_size-1) ? " (including overflows)" : "");
     }
 
-    putfield("Min Latency", t[i].minlat, PRIu64, " (us)");
+    putfield("Minimum", t[i].minlat, PRIu64, " (us)");
     putfield("Average", t[i].average, ".3lf", " (us)");
-    putfield("Max Latency", t[i].maxlat, PRIu64, " (us)");
+    putfield("Maximum", t[i].maxlat, PRIu64, " (us)");
     putfield("Max-Min", t[i].maxlat - t[i].minlat, PRIu64, " (us)");
     putfield("Duration", cycles_to_sec(&(t[i]), t[i].runtime),
              ".3f", " (sec)");
