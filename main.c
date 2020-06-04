@@ -482,9 +482,10 @@ const char *helpmsg =
     "                         print a marker in ftrace and stop ftrace too.\n"
     "  -w, --workload         Specify a kind of workload, default is no workload\n"
     "                         (options: no, memmove)\n"
-    "  -m, --workload-mem     Size of the memory to use for the workload (e.g., 4K, 1M)\n"
-    "                         Total memory usage will be *2*N, because there will be\n"
-    "                         src/dst buffers, and N is the core count for testing.\n"
+    "  -m, --workload-mem     Size of the memory to use for the workload (e.g., 4K, 1M).\n"
+    "                         Total memory usage will be this value multiplies 2*N,\n"
+    "                         because there will be src/dst buffers for each thread, and\n"
+    "                         N is the number of processors for testing.\n"
     "  -B, --bias             Add a bias to all the buckets using the estimated mininum\n"
     "\n"
     ;
