@@ -131,7 +131,10 @@ struct thread {
 struct global {
     /* Configuration. */
     unsigned              runtime_secs;
+    /* Number of threads running for current test (either pre heat or real run) */
     unsigned              n_threads;
+    /* Number of threads to test for the real run */
+    unsigned              n_threads_total;
     struct timeval        tv_start;
     int                   rtprio;
     int                   bucket_size;
@@ -143,6 +146,7 @@ struct global {
     uint64_t              workload_mem_size;
     int                   enable_bias;
     uint64_t              bias;
+    bool                  single_preheat_thread;
 
     /* Mutable state. */
     volatile enum command cmd;
@@ -448,19 +452,23 @@ static void run_expt(struct thread* threads, int runtime_secs)
     g.n_threads_finished = 0;
     g.cmd = WAIT;
 
-    for( i = 0; i < g.n_threads; ++i )
+    for( i = 0; i < g.n_threads; ++i ) {
         TEST0(pthread_create(&(threads[i].thread_id), NULL,
                              thread_main, &(threads[i])));
-    while( g.n_threads_started != g.n_threads )
+    }
+    while( g.n_threads_started != g.n_threads ) {
         usleep(1000);
+    }
+
     gettimeofday(&g.tv_start, NULL);
     g.cmd = GO;
 
     alarm(runtime_secs);
 
     /* Go to sleep until the threads have done their stuff. */
-    for( i = 0; i < g.n_threads; ++i )
+    for( i = 0; i < g.n_threads; ++i ) {
         pthread_join(threads[i].thread_id, NULL);
+    }
 }
 
 static void handle_alarm(int code)
@@ -490,6 +498,10 @@ const char *helpmsg =
     "                         because there will be src/dst buffers for each thread, and\n"
     "                         N is the number of processors for testing.\n"
     "  -B, --bias             Add a bias to all the buckets using the estimated mininum\n"
+    "  -s, --single-preheat   Use a single thread when measuring latency at preheat stage\n"
+    "                         NOTE: please make sure the CPU frequency on all testing cores\n"
+    "                         are locked before using this parmater.  If you don't know how\n"
+    "                         to lock the freq then please don't use this parameter.\n"
     "\n"
     ;
 
@@ -624,9 +636,10 @@ static void parse_options(int argc, char *argv[])
             { "workload", required_argument, NULL, 'w'},
             { "workload-mem", required_argument, NULL, 'm'},
             { "bias", no_argument, NULL, 'B'},
+            { "single-preheat", no_argument, NULL, 's'},
 			{ NULL, 0, NULL, 0 },
 		};
-		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:t:w:T:", options, NULL);
+		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:st:w:T:", options, NULL);
 
 		if (c == -1)
 			break;
@@ -687,6 +700,13 @@ static void parse_options(int argc, char *argv[])
                 exit(1);
             }
             break;
+        case 's':
+            /*
+             * Only use one core for pre-heat.  Then if --bias is used, the
+             * bias will be exactly the min value of the pre-heat core.
+             */
+            g.single_preheat_thread = true;
+            break;
         default:
             usage();
             break;
@@ -708,6 +728,8 @@ void dump_globals(void)
     printf("Workload mem: \t\t%"PRIu64" (KiB)\n",
            (g.workload->w_flags & WORK_NEED_MEM) ?
            (g.workload_mem_size / 1024) : 0);
+    printf("Preheat cores: \t\t%d\n", g.single_preheat_thread ?
+           1 : g.n_threads_total);
     printf("\n");
 }
 
@@ -756,7 +778,7 @@ int main(int argc, char* argv[])
     TEST( threads = calloc(1, CPU_COUNT(&cpu_set) * sizeof(threads[0])) );
     for( i = 0; i < n_cores; ++i )
         if (CPU_ISSET(i, &cpu_set) && move_to_core(i) == 0)
-            threads[g.n_threads++].core_i = i;
+            threads[g.n_threads_total++].core_i = i;
 
     if (CPU_ISSET(0, &cpu_set) && g.rtprio) {
         printf("WARNING: Running SCHED_FIFO workload on CPU 0 "
@@ -772,10 +794,19 @@ int main(int argc, char* argv[])
     dump_globals();
 
     printf("Pre-heat for 1 seconds...\n");
+    if (g.single_preheat_thread) {
+        g.n_threads = 1;
+    } else {
+        g.n_threads = g.n_threads_total;
+    }
     run_expt(threads, 1);
     record_bias(threads);
+
     printf("Test starts...\n");
+    /* Reset n_threads to always run on all the cores */
+    g.n_threads = g.n_threads_total;
     run_expt(threads, g.runtime);
+
     printf("Test completed.\n\n");
 
     write_summary(threads);
