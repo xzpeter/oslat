@@ -517,6 +517,7 @@ const char *helpmsg =
     "                         (m/M: minutes, h/H: hours, d/D: days)\n"
     "  -T, --trace-threshold  Stop the test when threshold triggered (in us),\n"
     "                         print a marker in ftrace and stop ftrace too.\n"
+    "  -v, --version          Display the version of the software.\n"
     "  -w, --workload         Specify a kind of workload, default is no workload\n"
     "                         (options: no, memmove)\n"
     "  -z, --zero-omit        Don't display buckets in the output histogram if all zeros.\n"
@@ -656,9 +657,11 @@ static void parse_options(int argc, char *argv[])
             { "bias", no_argument, NULL, 'B'},
             { "single-preheat", no_argument, NULL, 's'},
             { "zero-omit", no_argument, NULL, 'u'},
+            { "version", no_argument, NULL, 'v'},
 			{ NULL, 0, NULL, 0 },
 		};
-		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:st:w:T:z", options, NULL);
+		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:st:w:T:vz",
+                               options, NULL);
 
 		if (c == -1)
 			break;
@@ -725,6 +728,13 @@ static void parse_options(int argc, char *argv[])
              * bias will be exactly the min value of the pre-heat core.
              */
             g.single_preheat_thread = true;
+            break;
+        case 'v':
+            /*
+             * Because we always dump the version even before parsing options,
+             * what we need to do is to quit..
+             */
+            exit(0);
             break;
         case 'z':
             g.output_omit_zero_buckets = 1;
