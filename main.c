@@ -147,6 +147,7 @@ struct global {
     int                   enable_bias;
     uint64_t              bias;
     bool                  single_preheat_thread;
+    bool                  output_omit_zero_buckets;
 
     /* Mutable state. */
     volatile enum command cmd;
@@ -417,7 +418,7 @@ void calculate(struct thread *t)
 
 static void write_summary(struct thread* t)
 {
-    int i, j;
+    int i, j, k, print_dotdotdot = 0;
     char bucket_name[64];
 
     calculate(t);
@@ -426,6 +427,22 @@ static void write_summary(struct thread* t)
     putfield("CPU Freq", t[i].cpu_mhz, "u", " (Mhz)");
 
     for (j = 0; j < g.bucket_size; j++) {
+        if (j < g.bucket_size-1 && g.output_omit_zero_buckets) {
+            for (k = 0; k < g.n_threads; k++) {
+                if (t[k].buckets[j] != 0)
+                    break;
+            }
+            if (k == g.n_threads) {
+                print_dotdotdot = 1;
+                continue;
+            }
+        }
+
+        if (print_dotdotdot) {
+            printf("    ...\n");
+            print_dotdotdot = 0;
+        }
+
         snprintf(bucket_name, sizeof(bucket_name), "%03"PRIu64
                  " (us)", g.bias+j+1);
         putfield(bucket_name, t[i].buckets[j], PRIu64,
@@ -502,6 +519,7 @@ const char *helpmsg =
     "                         NOTE: please make sure the CPU frequency on all testing cores\n"
     "                         are locked before using this parmater.  If you don't know how\n"
     "                         to lock the freq then please don't use this parameter.\n"
+    "  -z, --zero-omit        Don't display buckets in the output histogram if all zeros.\n"
     "\n"
     ;
 
@@ -637,9 +655,10 @@ static void parse_options(int argc, char *argv[])
             { "workload-mem", required_argument, NULL, 'm'},
             { "bias", no_argument, NULL, 'B'},
             { "single-preheat", no_argument, NULL, 's'},
+            { "zero-omit", no_argument, NULL, 'u'},
 			{ NULL, 0, NULL, 0 },
 		};
-		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:st:w:T:", options, NULL);
+		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:st:w:T:z", options, NULL);
 
 		if (c == -1)
 			break;
@@ -706,6 +725,9 @@ static void parse_options(int argc, char *argv[])
              * bias will be exactly the min value of the pre-heat core.
              */
             g.single_preheat_thread = true;
+            break;
+        case 'z':
+            g.output_omit_zero_buckets = 1;
             break;
         default:
             usage();
