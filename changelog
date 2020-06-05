@@ -1,3 +1,10 @@
+v0.1.6:
+- Replace "MaxLat-Bias" with "Max-Min", should also potentially fix
+  negative displays of previous value
+- Replace "Max/Min Latency" to "Maximum/Minimum"
+- Added parameter "-s/--single-preheat" for only run one preheat thread
+- Added parameter "-z/--zero-omit" to omit zero buckets when display
+
 v0.1.5:
 - Fix a bug that preheat buckets not cleared
 - Added "--bias" option
