@@ -61,6 +61,10 @@ static inline void frc(uint64_t* pval)
 
 typedef uint64_t stamp_t;   /* timestamp */
 typedef uint64_t cycles_t;  /* number of cycles */
+typedef unsigned char bool;
+
+#define  true   1
+#define  false  0
 
 enum command {
     WAIT,
