@@ -140,6 +140,8 @@ struct global {
     int                   bucket_size;
     int                   trace_threshold;
     int                   runtime;
+    /* The core that we run the main thread.  Default is cpu0 */
+    int                   cpu_main_thread;
     char *                cpu_list;
     char *                app_name;
     struct workload *     workload;
@@ -504,6 +506,7 @@ const char *helpmsg =
     "  -b, --bucket-size      Specify the number of the buckets (4-1024)\n"
     "  -B, --bias             Add a bias to all the buckets using the estimated mininum\n"
     "  -c, --cpu-list         Specify CPUs to run on, e.g. '1,3,5,7-15'\n"
+    "  -C, --cpu-main-thread  Specify which CPU the main thread runs on.  Default is cpu0.\n"
     "  -f, --rtprio           Using SCHED_FIFO priority (1-99)\n"
     "  -m, --workload-mem     Size of the memory to use for the workload (e.g., 4K, 1M).\n"
     "                         Total memory usage will be this value multiplies 2*N,\n"
@@ -648,6 +651,7 @@ static void parse_options(int argc, char *argv[])
 		static struct option options[] = {
 			{ "bucket-size", required_argument, NULL, 'b' },
 			{ "cpu-list", required_argument, NULL, 'c' },
+            { "cpu-main-thread", required_argument, NULL, 'C'},
 			{ "runtime", required_argument, NULL, 't' },
 			{ "rtprio", required_argument, NULL, 'f' },
 			{ "help", no_argument, NULL, 'h' },
@@ -660,8 +664,9 @@ static void parse_options(int argc, char *argv[])
             { "version", no_argument, NULL, 'v'},
 			{ NULL, 0, NULL, 0 },
 		};
-		int i, c = getopt_long(argc, argv, "b:Bc:f:hm:st:w:T:vz",
+		int i, c = getopt_long(argc, argv, "b:Bc:C:f:hm:st:w:T:vz",
                                options, NULL);
+        long ncores;
 
 		if (c == -1)
 			break;
@@ -680,6 +685,15 @@ static void parse_options(int argc, char *argv[])
             break;
         case 'c':
             g.cpu_list = strdup(optarg);
+            break;
+        case 'C':
+            ncores = sysconf(_SC_NPROCESSORS_CONF);
+            g.cpu_main_thread = strtol(optarg, NULL, 10);
+            if (g.cpu_main_thread < 0 || g.cpu_main_thread > ncores) {
+                printf("Illegal core for main thread: %s (should be: 0-%ld)\n",
+                       optarg, ncores);
+                exit(1);
+            }
             break;
         case 't':
             g.runtime = parse_runtime(optarg);
@@ -756,6 +770,7 @@ void dump_globals(void)
         printf("default\n");
     }
     printf("CPU list: \t\t%s\n", g.cpu_list ?: "(all cores)");
+    printf("CPU for main thread: \t%d\n", g.cpu_main_thread);
     printf("Workload: \t\t%s\n", g.workload->w_name);
     printf("Workload mem: \t\t%"PRIu64" (KiB)\n",
            (g.workload->w_flags & WORK_NEED_MEM) ?
@@ -798,6 +813,8 @@ int main(int argc, char* argv[])
     g.runtime = 1;
     g.workload = &workload_list[WORKLOAD_DEFUALT];
     g.workload_mem_size = WORKLOAD_MEM_SIZE;
+    /* Run the main thread on cpu0 by default */
+    g.cpu_main_thread = 0;
 
     printf("\nVersion: %s\n\n", version);
 
@@ -817,7 +834,7 @@ int main(int argc, char* argv[])
                "may hang the main thread\n");
     }
 
-    TEST(move_to_core(0) == 0);
+    TEST(move_to_core(g.cpu_main_thread) == 0);
 
     signal(SIGALRM, handle_alarm);
     signal(SIGINT, handle_alarm);
