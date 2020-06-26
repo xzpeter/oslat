@@ -1,3 +1,6 @@
+v0.1.7:
+- Add parameter "-C/--cpu-main-thread" to specify the cpu to run the main
+  thread
 v0.1.6:
 - Replace "MaxLat-Bias" with "Max-Min", should also potentially fix
   negative displays of previous value
