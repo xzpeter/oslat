@@ -648,30 +648,30 @@ static int workload_select(char *name)
 static void parse_options(int argc, char *argv[])
 {
     while (1) {
-		static struct option options[] = {
-			{ "bucket-size", required_argument, NULL, 'b' },
-			{ "cpu-list", required_argument, NULL, 'c' },
+        static struct option options[] = {
+            { "bucket-size", required_argument, NULL, 'b' },
+            { "cpu-list", required_argument, NULL, 'c' },
             { "cpu-main-thread", required_argument, NULL, 'C'},
-			{ "runtime", required_argument, NULL, 't' },
-			{ "rtprio", required_argument, NULL, 'f' },
-			{ "help", no_argument, NULL, 'h' },
-			{ "trace-threshold", required_argument, NULL, 'T' },
+            { "runtime", required_argument, NULL, 't' },
+            { "rtprio", required_argument, NULL, 'f' },
+            { "help", no_argument, NULL, 'h' },
+            { "trace-threshold", required_argument, NULL, 'T' },
             { "workload", required_argument, NULL, 'w'},
             { "workload-mem", required_argument, NULL, 'm'},
             { "bias", no_argument, NULL, 'B'},
             { "single-preheat", no_argument, NULL, 's'},
             { "zero-omit", no_argument, NULL, 'u'},
             { "version", no_argument, NULL, 'v'},
-			{ NULL, 0, NULL, 0 },
-		};
-		int i, c = getopt_long(argc, argv, "b:Bc:C:f:hm:st:w:T:vz",
+            { NULL, 0, NULL, 0 },
+        };
+        int i, c = getopt_long(argc, argv, "b:Bc:C:f:hm:st:w:T:vz",
                                options, NULL);
         long ncores;
 
-		if (c == -1)
-			break;
+        if (c == -1)
+            break;
 
-		switch (c) {
+        switch (c) {
         case 'b':
             g.bucket_size = strtol(optarg, NULL, 10);
             if (g.bucket_size > 1024 || g.bucket_size <= 4) {
@@ -756,8 +756,8 @@ static void parse_options(int argc, char *argv[])
         default:
             usage();
             break;
-		}
-	}
+        }
+    }
 }
 
 void dump_globals(void)
