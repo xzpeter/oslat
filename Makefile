@@ -14,6 +14,12 @@ ifneq ($(is_x86),)
 CFLAGS += -march=i686
 endif
 
+IMAGE_BUILD_CMD ?= "docker"
+IMAGE_REGISTRY ?= "quay.io"
+REGISTRY_NAMESPACE ?= ""
+IMAGE_TAG ?= "latest"
+FULL_IMAGE_NAME ?= "${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/oslat:${IMAGE_TAG}"
+
 all: oslat
 
 oslat: main.o rt-utils.o error.o trace.o
@@ -27,3 +33,17 @@ install: oslat
 
 cscope:
 	cscope -bq *.c
+
+build-container:
+	@if [ -z "$(REGISTRY_NAMESPACE)" ]; then\
+		echo "REGISTRY_NAMESPACE env-var must be set to your $(IMAGE_REGISTRY) repository";\
+		exit 1;\
+	fi
+	$(IMAGE_BUILD_CMD) build -t $(FULL_IMAGE_NAME) .
+
+push-container:
+	@if [ -z "$(REGISTRY_NAMESPACE)" ]; then\
+                echo "REGISTRY_NAMESPACE env-var must be set to your $(IMAGE_REGISTRY) repository";\
+                exit 1;\
+        fi
+	$(IMAGE_BUILD_CMD) push $(FULL_IMAGE_NAME)
