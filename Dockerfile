@@ -19,4 +19,6 @@ dnf install -y numactl-libs && \
 dnf clean all
 
 COPY --from=builder /oslat/oslat /usr/bin/oslat
+COPY run.sh /usr/local/bin/run.sh
 
+ENTRYPOINT ["/usr/local/bin/run.sh"]
