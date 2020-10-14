@@ -1,6 +1,11 @@
 oslat - OS Latency Detector
 ==========
 
+IMPORTANT NOTICE: This repository is obsolete now since oslat is merged into
+rt-tests.  For the latest version of oslat, please go to:
+
+    https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git
+
 Introduction
 ------------
 
